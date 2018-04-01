@@ -7,18 +7,28 @@ import sqlContext.implicits._
 
 // COMMAND ----------
 
+val teams = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load("/FileStore/tables/Teams.csv")
 val ncaaresults = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load("/FileStore/tables/NCAATourneyDetailedResults.csv")
 val regresults = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load("/FileStore/tables/RegularSeasonDetailedResults.csv")
 val regresults_2018 = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load("/FileStore/tables/RegularSeasonDetailedResults_2018.csv")
+val ncaaresults_2018 = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load("/FileStore/tables/NCAATourneyDetailedResults_2018.csv").drop("WTeamName").drop("LTeamName")
 
 // COMMAND ----------
 
-val games_1 = regresults.union(ncaaresults).union(regresults_2018)
+val games_0 = regresults.union(ncaaresults).union(regresults_2018).union(ncaaresults_2018)
+
+// COMMAND ----------
+
+val games_00 = games_0.join(teams, games_0.col("WTeamID") === teams.col("TeamID"), "left")
+                      .drop("TeamID").drop("FirstD1Season").drop("LastD1Season").withColumnRenamed("TeamName","WTeamName")
+val games_1 = games_00.join(teams, games_0.col("LTeamID") === teams.col("TeamID"), "left")
+                      .drop("TeamID").drop("FirstD1Season").drop("LastD1Season").withColumnRenamed("TeamName","LTeamName")
 
 // COMMAND ----------
 
 val games_2 = (games_1.select($"Season"
                               ,$"DayNum"
+                              ,$"WTeamName".alias("TeamName")
                               ,$"WTeamID".alias("TeamID")
                               ,$"WScore".alias("Score")
                               ,$"WFGM".alias("FGM")
@@ -40,6 +50,7 @@ val games_2 = (games_1.select($"Season"
 
 val games_3 = (games_1.select($"Season"
                               ,$"DayNum"
+                              ,$"LTeamName".alias("TeamName")
                               ,$"LTeamID".alias("TeamID")
                               ,$"LScore".alias("Score")
                               ,$"LFGM".alias("FGM")
@@ -65,6 +76,7 @@ val games = games_2.union(games_3).withColumn("Rank", rank().over(Window.partiti
 
 val g2 = games.select($"Season".alias("Season_2")
                       ,$"DayNum".alias("DayNum_2")
+                      ,$"TeamName".alias("TeamName_2")
                       ,$"TeamID".alias("TeamID_2")
                       ,$"Score".alias("Score_2")
                       ,$"FGM".alias("FGM_2")
@@ -116,4 +128,12 @@ stats.write.mode(SaveMode.Overwrite).format("orc").save("/FileStore/tables/NCAA_
 
 // COMMAND ----------
 
+//stats.filter($"Season"===2018&&$"TeamID"===1328).show()
+
+// COMMAND ----------
+
 //display(games_1.filter("WTeamID=1328").select($"Season",$"WScore",$"LScore"))
+
+// COMMAND ----------
+
+
