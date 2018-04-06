@@ -254,7 +254,7 @@ val pred_2011 = ratings_2011.agg(mean(-log("Prediction"))).first.getDouble(0)
 //2012
 val games_2012 = games_5.filter($"Season" === 2012)
 val team_elo_2012_before = set_elo(teams, team_elo_2011_after, false)
-//val team_elo_2012_after = calc_elo_year(2012,games_2012,team_elo_2012_before)
+val team_elo_2012_after = calc_elo_year(2012,games_2012,team_elo_2012_before)
 val ratings_2012 = spark.read.orc("dbfs:/FileStore/tables/2012_EloRatings/")
 //val final_ratings_2012 = spark.read.orc("dbfs:/FileStore/tables/Final_2012_EloRatings/")
 //val team_elo_2012_after = eloDataframeToMap(final_ratings_2012)
@@ -335,54 +335,7 @@ println(pred_2018)
 // COMMAND ----------
 
 //ratings_2003.count()
-ratings_2018.filter("WTeamID=1328 OR LTeamID=1328").orderBy("DayNum").show(1000)
-
-// COMMAND ----------
-
-teams.filter("TeamID=1303").show()
-
-// COMMAND ----------
-
-/*
-val schema = StructType(
-  StructField("Season", IntegerType, true) 
-  :: StructField("DayNum", IntegerType, true)
-  :: StructField("Prediction", DoubleType, true)
-  :: StructField("Update", DoubleType, true)
-  :: StructField("WTeamID", IntegerType, true) 
-  :: StructField("WTeamElo", DoubleType, true)
-  :: StructField("WTeamIDNewElo", DoubleType, true)
-  :: StructField("LTeamID", IntegerType, true)
-  :: StructField("LTeamIDElo", DoubleType, true)
-  :: StructField("LTeamIDNewElo", DoubleType, true)
-  :: Nil
-)
-var ratings = spark.createDataFrame(sc.emptyRDD[Row], schema)
-
-val days = games_2003.agg(max("DayNum")).first.getInt(0)
-
-for (i <- 1 to days) {
-  val df = games_2003.filter($"DayNum" === i)
-  if(df.count > 0) {
-    val dayDF = (df.map(r => {calc_elo(r,team_elo_2003)})
-                  .toDF("Prediction","Update","WTeamID","WTeamElo","WTeamIDNewElo","LTeamID","LTeamIDElo","LTeamIDNewElo")
-                  .withColumn("Season",lit(2003))
-                  .withColumn("DayNum",lit(i))
-                  .select($"Season",$"DayNum",$"Prediction",$"Update"
-                          ,$"WTeamID",$"WTeamElo",$"WTeamIDNewElo"
-                          ,$"LTeamID",$"LTeamIDElo",$"LTeamIDNewElo")
-                 )
-    
-    //dayDF.show()
-    dayDF.write.mode(SaveMode.Append).format("orc").save("dbfs:/FileStore/tables/2003_EloRatings/")
-    
-    dayDF.collect().map(r => {
-      team_elo_2003 += (r.getInt(4) -> r.getDouble(6))
-      team_elo_2003 += (r.getInt(7) -> r.getDouble(9))
-    })
-  }
-}
-*/
+//ratings_2018.filter("WTeamID=1328 OR LTeamID=1328").orderBy("DayNum").show(1000)
 
 // COMMAND ----------
 

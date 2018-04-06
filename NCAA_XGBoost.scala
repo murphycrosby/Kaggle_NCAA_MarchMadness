@@ -17,25 +17,17 @@ val game_cities = spark.read.format("csv").option("header", "true").option("infe
 val ncaaresults = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load("/FileStore/tables/NCAATourneyDetailedResults.csv")
 val regresults = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load("/FileStore/tables/RegularSeasonDetailedResults.csv")
 val regresults_2018 = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load("/FileStore/tables/RegularSeasonDetailedResults_2018.csv")
+val ncaaresults_2018 = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load("/FileStore/tables/NCAATourneyDetailedResults_2018.csv").drop("WTeamName").drop("LTeamName")
 val stats = spark.read.format("orc").load("/FileStore/tables/NCAA_Stats/")
-val elo = spark.read.format("orc").load("/FileStore/tables/elo/")
+val elo = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load("/FileStore/tables/elo_ratings/")
 
 // COMMAND ----------
 
-val games_1 = regresults.union(ncaaresults).union(regresults_2018)
+val games_1 = regresults.union(ncaaresults).union(regresults_2018).union(ncaaresults_2018)
 
 // COMMAND ----------
 
-val games_2 = (games_1.join(game_cities, games_1.col("Season") === game_cities.col("Season") 
-                            && games_1.col("DayNum") === game_cities.col("DayNum")
-                            && games_1.col("WTeamID") === game_cities.col("WTeamID")
-                            && games_1.col("LTeamID") === game_cities.col("LTeamID")
-                            ,"left")
-               .drop(game_cities.col("Season"))
-               .drop(game_cities.col("DayNum"))
-               .drop(game_cities.col("WTeamID"))
-               .drop(game_cities.col("LTeamID"))
-              )
+val games_2 = games_1.join(game_cities, Seq("Season","DayNum","WTeamID","LTeamID"),"left")
 
 // COMMAND ----------
 
@@ -69,7 +61,7 @@ val games_3 = (games_2_5.join(coaches, games_2_5.col("Season") === coaches.col("
 
 // COMMAND ----------
 
-val games_4 = (games_3.join(coaches, games_3.col("Season") === coaches.col("Season")
+val games_4 = (games_3.join(coaches, games_3.col("Season") === coaches.col("Season") 
                            && games_3.col("LTeamID") === coaches.col("TeamID")
                            && games_3.col("DayNum") >= coaches.col("FirstDayNum")
                            && games_3.col("DayNum") <= coaches.col("LastDayNum")
@@ -83,15 +75,7 @@ val games_4 = (games_3.join(coaches, games_3.col("Season") === coaches.col("Seas
 
 // COMMAND ----------
 
-val games_4_5 = games_4.join(elo, games_4.col("Season") === elo.col("Season")
-                           && games_4.col("WTeamID") === elo.col("WTeamID")
-                           && games_4.col("LTeamID") === elo.col("LTeamID")
-                           && games_4.col("DayNum") === elo.col("DayNum")
-                           ,"left")
-                        .drop(elo.col("Season"))
-                        .drop(elo.col("DayNum"))
-                        .drop(elo.col("WTeamID"))
-                        .drop(elo.col("LTeamID"))
+val games_4_5 = games_4.join(elo, Seq("Season","WTeamID","LTeamID","DayNum"),"left")
                         .drop(elo.col("WTeamIDNewElo"))
                         .drop(elo.col("LTeamIDNewElo"))
                         .withColumnRenamed("LTeamIDElo","LTeamElo")
@@ -102,10 +86,9 @@ val games_5 = games_4_5.orderBy($"Season".asc, $"DayNum".asc)
 
 // COMMAND ----------
 
-val games_6 = (games_5.join(stats, games_5.col("Season") === stats.col("Season")
-                           && games_5.col("DayNum") === stats.col("DayNum")
-                           && games_5.col("WTeamID") === stats.col("TeamID")
-                          ,"left")
+val games_6 = (games_5.join(stats, games_5.col("Season") === stats.col("Season") 
+                            && games_5.col("DayNum") === stats.col("DayNum")
+                            && games_5.col("WTeamID") === stats.col("TeamID"),"left")
                .drop(stats.col("Season"))
                .drop(stats.col("DayNum"))
                .drop(stats.col("TeamID"))
@@ -126,9 +109,8 @@ val games_6 = (games_5.join(stats, games_5.col("Season") === stats.col("Season")
 // COMMAND ----------
 
 val games_7 = (games_6.join(stats, games_6.col("Season") === stats.col("Season")
-                           && games_6.col("DayNum") === stats.col("DayNum")
-                           && games_6.col("LTeamID") === stats.col("TeamID")
-                          ,"left")
+                            && games_6.col("DayNum") === stats.col("DayNum")
+                            && games_6.col("LTeamID") === stats.col("TeamID"),"left")
                .drop(stats.col("Season"))
                .drop(stats.col("DayNum"))
                .drop(stats.col("TeamID"))
@@ -303,7 +285,9 @@ print ("Losing Root mean squared error: " + l_rmse)
 
 // COMMAND ----------
 
-val first_round = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load("/FileStore/tables/Round_1.csv")
+val first_round = spark.read.format("csv").option("header", "true").option("inferSchema", "true")
+                            .load("/FileStore/tables/NCAARound_6_2018.csv")
+val roundDayNum = 148
 
 // COMMAND ----------
 
@@ -407,11 +391,17 @@ val elo_3 = elo_1.union(elo_2).filter("Season=2018")
 
 // COMMAND ----------
 
-val max_elo = elo_3.filter("Season=2018").groupBy("TeamID").agg(max("DayNum").alias("DayNum"))
-val recent_elo = elo_3.join(max_elo,elo_3.col("TeamID")===max_elo.col("TeamID")
-                            && elo_3.col("DayNum")===max_elo.col("DayNum"),"inner")
-                    .drop(max_elo.col("TeamID"))
-                    .drop(max_elo.col("DayNum"))
+//elo_3.filter($"TeamID"===1342).orderBy($"DayNum").show(1000)
+//current_elo.filter($"TeamID"===1342).show(1000)
+//current_elo.show(100)
+
+// COMMAND ----------
+
+val current_elo = elo_3.filter($"Season"===2018 && $"Daynum" < roundDayNum).groupBy("TeamID").agg(max("DayNum").alias("DayNum"))
+val recent_elo = elo_3.join(current_elo,elo_3.col("TeamID") === current_elo.col("TeamID")
+                            && elo_3.col("DayNum") === current_elo.col("DayNum"),"inner")
+                            .drop(current_elo.col("TeamID"))
+                            .drop(current_elo.col("DayNum"))
 
 // COMMAND ----------
 
@@ -543,8 +533,8 @@ val two_first_round_7 = (two_first_round_6.join(recent_stats, two_first_round_6.
 
 // COMMAND ----------
 
-val one_first_round_7_5 = one_first_round_7.withColumn("DayNum",lit("134").cast(IntegerType))
-val two_first_round_7_5 = two_first_round_7.withColumn("DayNum",lit("134").cast(IntegerType))
+val one_first_round_7_5 = one_first_round_7.withColumn("DayNum",lit("136").cast(IntegerType))
+val two_first_round_7_5 = two_first_round_7.withColumn("DayNum",lit("136").cast(IntegerType))
 
 // COMMAND ----------
 
@@ -571,8 +561,7 @@ val two_first_round_8 = two_first_round_7_5.select($"Season",$"Daynum"
 
 // COMMAND ----------
 
-println(one_first_round_8.na.drop().count())
-println(two_first_round_8.na.drop().count())
+one_first_round_8.show()
 
 // COMMAND ----------
 
@@ -623,17 +612,17 @@ val two = (w_two.join(l_two,w_two.col("WTeamID")===l_two.col("WTeamID")
 
 // COMMAND ----------
 
-one
-   .coalesce(1)
+one.coalesce(1)
    .write.format("com.databricks.spark.csv")
+   .mode(SaveMode.Overwrite)
    .option("header", "true")
-   .save("dbfs:/FileStore/tables/one/one.csv")
+   .save("dbfs:/FileStore/tables/one/")
 
-two
-   .coalesce(1)
+two.coalesce(1)
    .write.format("com.databricks.spark.csv")
+   .mode(SaveMode.Overwrite)
    .option("header", "true")
-   .save("dbfs:/FileStore/tables/two/two.csv")
+   .save("dbfs:/FileStore/tables/two/")
 
 // COMMAND ----------
 
