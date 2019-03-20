@@ -11,9 +11,6 @@ from keras.callbacks import EarlyStopping, ModelCheckpoint
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 from sklearn.model_selection import train_test_split
 
-# from sklearn.compose import ColumnTransformer, make_column_transformer
-# from sklearn.metrics import mean_squared_error
-
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
@@ -68,8 +65,8 @@ def load_historical_data(season_year, onehot_season, onehot_daynum, onehot_teams
     print(df_y.shape)
 
     # x_train, y_train = parse_stats_data(train, full, onehot_season, onehot_daynum, onehot_teams)
-    df_x.to_csv('x_train-' + str(season_year) + '.csv', index=False)
-    df_y.to_csv('y_train-' + str(season_year) + '.csv', index=False)
+    df_x.to_csv('./training_data/x_train-' + str(season_year) + '.csv', index=False)
+    df_y.to_csv('./training_data/y_train-' + str(season_year) + '.csv', index=False)
 
 
 def parse_stats_data(df, full, onehot_season, onehot_daynum, onehot_teams):
@@ -422,7 +419,7 @@ def parse_stats_data(df, full, onehot_season, onehot_daynum, onehot_teams):
 
 
 def predict_stage():
-    model_name = 'ncaa_model.h5'
+    model_name = './models/ncaa_model.h5'
     model_file = Path(model_name)
     if model_file.exists():
         model = load_model(model_name)
@@ -506,14 +503,14 @@ def predict_stage():
         print(preds.shape)
 
     print(preds.shape)
-    preds.to_csv('SubmissionStage.csv', index=False)
+    preds.to_csv('./submission_files/submission_stage.csv', index=False)
 
     print(preds2.shape)
-    preds2.to_csv('SubmissionStage2_full.csv', index=False)
+    preds2.to_csv('./submission_files/submission_stage_full.csv', index=False)
 
 
 def train_model():
-    model_name = 'ncaa_model.h5'
+    model_name = './models/ncaa_model.h5'
     model_file = Path(model_name)
     if model_file.exists():
         model = load_model(model_name)
@@ -538,8 +535,8 @@ def train_model():
     y = []
     index = 0
     for season in range(2003, 2020):
-        a = pd.read_csv('./x_train-%i.csv' % season)
-        b = pd.read_csv('./y_train-%i.csv' % season)
+        a = pd.read_csv('./training_data/x_train-%i.csv' % season)
+        b = pd.read_csv('./training_data/y_train-%i.csv' % season)
         if len(a) == 0 or len(b) == 0:
             continue
         if index == 0:
