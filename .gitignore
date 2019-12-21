@@ -9,3 +9,5 @@ __pycache__/
 *.json
 *.csv
 *.h5
+
+.idea/
