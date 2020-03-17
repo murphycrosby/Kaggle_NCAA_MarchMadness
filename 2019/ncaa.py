@@ -11,16 +11,16 @@ from keras.callbacks import EarlyStopping, ModelCheckpoint
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 from sklearn.model_selection import train_test_split
 
-
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
+data_dir = './mens-machine-learning-competition-2019/Stage2DataFiles'
+multithread = False
 
 
 def load_historical_data(num_of_games, season_year, onehot_season, onehot_daynum, onehot_teams):
-	regular = pd.read_csv("./data/RegularSeasonDetailedResults.csv")
-	tourney = pd.read_csv("./data/NCAATourneyDetailedResults.csv")
+	regular = pd.read_csv(os.path.join(data_dir, 'RegularSeasonDetailedResults.csv'))
+	tourney = pd.read_csv(os.path.join(data_dir, 'NCAATourneyDetailedResults.csv'))
 
 	print(tourney.columns)
-
 	# tourney_b = tourney[(tourney.Season < 2014)]
 	# data = tourney[(tourney.Season >= 2014)]
 
@@ -33,27 +33,30 @@ def load_historical_data(num_of_games, season_year, onehot_season, onehot_daynum
 
 	print(train.shape)
 
-	print("    Full: %s" % str(full.shape))
-	print("Training: %s" % str(train.shape))
+	print('    Full: %s' % str(full.shape))
+	print('Training: %s' % str(train.shape))
 
-	df_split = np.array_split(train, 100)
-	args = []
-	for x in df_split:
-		args.append([num_of_games, x, full, onehot_season, onehot_daynum, onehot_teams])
+	if multithread:
+		df_split = np.array_split(train, 100)
+		args = []
+		for x in df_split:
+			args.append([num_of_games, x, full, onehot_season, onehot_daynum, onehot_teams])
 
-	with Pool(processes=8) as pool:
-		df = pool.starmap(parse_stats_data, args)
+		with Pool(processes=8) as pool:
+			df = pool.starmap(parse_stats_data, args)
 
-	x_train = []
-	y_train = []
-	for f in df:
-		if len(x_train) == 0:
-			x_train = f[0]
-			y_train = f[1]
-		else:
-			if len(f[0]) > 0 and len(f[1]) > 0:
-				x_train = np.concatenate((x_train, f[0]), axis=0)
-				y_train = np.concatenate((y_train, f[1]), axis=0)
+		x_train = []
+		y_train = []
+		for f in df:
+			if len(x_train) == 0:
+				x_train = f[0]
+				y_train = f[1]
+			else:
+				if len(f[0]) > 0 and len(f[1]) > 0:
+					x_train = np.concatenate((x_train, f[0]), axis=0)
+					y_train = np.concatenate((y_train, f[1]), axis=0)
+	else:
+		x_train, y_train = parse_stats_data(num_of_games, train, full, onehot_season, onehot_daynum, onehot_teams)
 
 	print(x_train.shape)
 	print(y_train.shape)
@@ -83,11 +86,11 @@ def parse_stats_data(num_of_games, df, full, onehot_season, onehot_daynum, oneho
 		# print(onehot_encoder.transform(np.array(row.WTeamID).reshape(-1, 1)))
 		# print(onehot_encoder.transform(np.array(row.LTeamID).reshape(-1, 1)))
 
-		# print("===============")
-		# print(" Season: ", row.Season)
-		# print(" DayNum: ", row.DayNum)
-		# print("WTeamID: ", row.WTeamID)
-		# print("LTeamID: ", row.LTeamID)
+		# print('===============')
+		# print(' Season: ', row.Season)
+		# print(' DayNum: ', row.DayNum)
+		# print('WTeamID: ', row.WTeamID)
+		# print('LTeamID: ', row.LTeamID)
 
 		w_hist = full[(full.Season == row.Season) & (full.DayNum < row.DayNum) &
 		              ((full.WTeamID == row.WTeamID) | (full.LTeamID == row.WTeamID))] \
@@ -102,15 +105,15 @@ def parse_stats_data(num_of_games, df, full, onehot_season, onehot_daynum, oneho
 
 		# print(len(w_hist))
 		for i in range(num_of_games):
-			# print("- Winner History (%s) -" % str(row.WTeamID))
-			# print(" DayNum: ", w_hist.iloc()[i].DayNum)
-			# print("WTeamID: ", w_hist.iloc()[i].WTeamID)
-			# print("LTeamID: ", w_hist.iloc()[i].LTeamID)
+			# print('- Winner History (%s) -' % str(row.WTeamID))
+			# print(' DayNum: ', w_hist.iloc()[i].DayNum)
+			# print('WTeamID: ', w_hist.iloc()[i].WTeamID)
+			# print('LTeamID: ', w_hist.iloc()[i].LTeamID)
 
-			# print("- Loser History (%s) -" % str(row.LTeamID))
-			# print(" DayNum: ", l_hist.iloc()[i].DayNum)
-			# print("WTeamID: ", l_hist.iloc()[i].WTeamID)
-			# print("LTeamID: ", l_hist.iloc()[i].LTeamID)
+			# print('- Loser History (%s) -' % str(row.LTeamID))
+			# print(' DayNum: ', l_hist.iloc()[i].DayNum)
+			# print('WTeamID: ', l_hist.iloc()[i].WTeamID)
+			# print('LTeamID: ', l_hist.iloc()[i].LTeamID)
 
 			team1stats = []
 			team2stats = []
@@ -391,18 +394,18 @@ def parse_stats_data(num_of_games, df, full, onehot_season, onehot_daynum, oneho
 			else:
 				x = np.concatenate((x, x_1), axis=0)
 
-			# print(x.shape)
+		# print(x.shape)
 
 		if row.WTeamID < row.LTeamID:
 			y_1 = [1, 0]
-			# y_1 = [row.WFGM, row.WFGA, row.WFGM3, row.WFGA3, row.WFTM, row.WFTA, row.WOR, row.WDR, row.WAst, row.WTO,
-			#        row.WStl, row.WBlk, row.WPF, row.LFGM, row.LFGA, row.LFGM3, row.LFGA3, row.LFTM, row.LFTA, row.LOR,
-			#        row.LDR, row.LAst, row.LTO, row.LStl, row.LBlk, row.LPF]
+		# y_1 = [row.WFGM, row.WFGA, row.WFGM3, row.WFGA3, row.WFTM, row.WFTA, row.WOR, row.WDR, row.WAst, row.WTO,
+		#        row.WStl, row.WBlk, row.WPF, row.LFGM, row.LFGA, row.LFGM3, row.LFGA3, row.LFTM, row.LFTA, row.LOR,
+		#        row.LDR, row.LAst, row.LTO, row.LStl, row.LBlk, row.LPF]
 		else:
 			y_1 = [0, 1]
-			# y_1 = [row.LFGM, row.LFGA, row.LFGM3, row.LFGA3, row.LFTM, row.LFTA, row.LOR, row.LDR, row.LAst, row.LTO,
-			#        row.LStl, row.LBlk, row.LPF, row.WFGM, row.WFGA, row.WFGM3, row.WFGA3, row.WFTM, row.WFTA, row.WOR,
-			#        row.WDR, row.WAst, row.WTO, row.WStl, row.WBlk, row.WPF]
+		# y_1 = [row.LFGM, row.LFGA, row.LFGM3, row.LFGA3, row.LFTM, row.LFTA, row.LOR, row.LDR, row.LAst, row.LTO,
+		#        row.LStl, row.LBlk, row.LPF, row.WFGM, row.WFGA, row.WFGM3, row.WFGA3, row.WFTM, row.WFTA, row.WOR,
+		#        row.WDR, row.WAst, row.WTO, row.WStl, row.WBlk, row.WPF]
 
 		y_1 = np.array(y_1)
 		# y_1 = y_1.reshape(1, 26)
@@ -444,15 +447,15 @@ def predict_stage(num_of_games):
 	onehot_daynum = OneHotEncoder(sparse=False, categories='auto')
 	onehot_daynum.fit(daynum_df.DayNum.values.reshape(-1, 1))
 
-	teams_df = pd.read_csv("./data/Teams.csv")
+	teams_df = pd.read_csv(os.path.join(data_dir, 'Teams.csv'))
 	onehot_teams = OneHotEncoder(sparse=False, categories='auto')
 	onehot_teams.fit(teams_df.TeamID.values.reshape(-1, 1))
 
-	regular = pd.read_csv("./data/RegularSeasonDetailedResults.csv")
-	tourney = pd.read_csv("./data/NCAATourneyDetailedResults.csv")
+	regular = pd.read_csv(os.path.join(data_dir, 'RegularSeasonDetailedResults.csv'))
+	tourney = pd.read_csv(os.path.join(data_dir, 'NCAATourneyDetailedResults.csv'))
 	full = pd.concat([regular, tourney])
 
-	seeds = pd.read_csv("./data/NCAATourneySeeds.csv")
+	seeds = pd.read_csv(os.path.join(data_dir, 'NCAATourneySeeds.csv'))
 
 	preds = []
 	preds2 = []
@@ -483,7 +486,7 @@ def predict_stage(num_of_games):
 
 			prediction = model.predict(x)
 
-			print("%i - %s-%i (%.2f) vs. %s-%i (%.2f)" %
+			print('%i - %s-%i (%.2f) vs. %s-%i (%.2f)' %
 			      (season, team1.TeamName.values[0], team1.TeamID.values[0], prediction[0][0],
 			       team2.TeamName.values[0], team2.TeamID.values[0], prediction[0][1]))
 
@@ -505,6 +508,9 @@ def predict_stage(num_of_games):
 			print('--------------')
 
 		print(preds.shape)
+
+	if not os.path.exists('./submission_files'):
+		os.mkdir('./submission_files')
 
 	print(preds.shape)
 	preds.to_csv('./submission_files/submission_stage.csv', index=False)
@@ -550,7 +556,7 @@ def train_model(num_of_games):
 		else:
 			x = pd.concat([x, a])
 			y = pd.concat([y, b])
-		print("%i: %s" % (season, x.shape))
+		print('%i: %s' % (season, x.shape))
 
 	x = x.values.reshape(y.shape[0], num_of_games, 1860)
 	print('X Shape: %s' % str(x.shape))
@@ -587,24 +593,25 @@ def process_historical(num_of_games):
 	onehot_daynum = OneHotEncoder(sparse=False, categories='auto')
 	onehot_daynum.fit(daynum_df.DayNum.values.reshape(-1, 1))
 
-	teams = pd.read_csv("./data/Teams.csv")
+	teams = pd.read_csv(os.path.join(data_dir, 'Teams.csv'))
 	onehot_teams = OneHotEncoder(sparse=False, categories='auto')
 	onehot_teams.fit(teams.TeamID.values.reshape(-1, 1))
 
 	for season in range(2003, 2020):
-		print("Processing Season %i" % season)
+		print('Processing Season %i' % season)
 		load_historical_data(num_of_games, season, onehot_season, onehot_daynum, onehot_teams)
 
 
 def main():
 	num_of_games = 5
 
-	# process_historical(num_of_games=num_of_games)
-	# train_model(num_of_games=num_of_games)
-	predict_stage(num_of_games=num_of_games)
+	process_historical(num_of_games)
+	train_model(num_of_games)
+	predict_stage(num_of_games)
 
-	# {'nb_neurons': [32, 128, 8], 'activation': ['sigmoid', 'sigmoid', 'softmax'],
-	# 'nb_layers': 3, 'optimizer': 'adagrad'}
+
+# {'nb_neurons': [32, 128, 8], 'activation': ['sigmoid', 'sigmoid', 'softmax'],
+# 'nb_layers': 3, 'optimizer': 'adagrad'}
 
 
 if __name__ == '__main__':
