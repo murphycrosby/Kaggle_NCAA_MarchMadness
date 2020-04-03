@@ -1,8 +1,9 @@
+import argparse
 import pandas as pd
 import numpy as np
 from multiprocessing import Pool
 import os
-from pathlib import Path
+import time
 import itertools as it
 from keras.models import Sequential, load_model
 from keras.layers import Dense
@@ -12,41 +13,88 @@ from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 from sklearn.model_selection import train_test_split
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
-data_dir = './mens-machine-learning-competition-2019/Stage2DataFiles'
+data_dir = './google-cloud-ncaa-march-madness-2020-division-1-mens-tournament/MDataFiles_Stage1'
+data_dir2 = './google-cloud-ncaa-march-madness-2020-division-1-mens-tournament/MDataFiles_Stage2'
+model_dir = './model'
+training_dir = './training_data'
 multithread = False
 
 
+def get_scaler():
+    regular = pd.read_csv(os.path.join(data_dir, 'MRegularSeasonDetailedResults.csv'))
+    regular2 = pd.read_csv(os.path.join(data_dir2, 'MRegularSeasonDetailedResults.csv'))
+    tourney = pd.read_csv(os.path.join(data_dir, 'MNCAATourneyDetailedResults.csv'))
+    full = pd.concat([regular, regular2, tourney])
+    full = full.drop_duplicates()
+    min_stats = [
+        min(full['WFGM'].min(), full['LFGM'].min()),
+        min(full['WFGA'].min(), full['LFGA'].min()),
+        min(full['WFGM3'].min(), full['LFGM3'].min()),
+        min(full['WFGA3'].min(), full['LFGA3'].min()),
+        min(full['WFTM'].min(), full['LFTM'].min()),
+        min(full['WFTA'].min(), full['LFTA'].min()),
+        min(full['WOR'].min(), full['LOR'].min()),
+        min(full['WDR'].min(), full['LDR'].min()),
+        min(full['WAst'].min(), full['LAst'].min()),
+        min(full['WTO'].min(), full['LTO'].min()),
+        min(full['WStl'].min(), full['LStl'].min()),
+        min(full['WBlk'].min(), full['LBlk'].min()),
+        min(full['WPF'].min(), full['LPF'].min())
+    ]
+    max_stats = [
+        max(full['WFGM'].max(), full['LFGM'].max()),
+        max(full['WFGA'].max(), full['LFGA'].max()),
+        max(full['WFGM3'].max(), full['LFGM3'].max()),
+        max(full['WFGA3'].max(), full['LFGA3'].max()),
+        max(full['WFTM'].max(), full['LFTM'].max()),
+        max(full['WFTA'].max(), full['LFTA'].max()),
+        max(full['WOR'].max(), full['LOR'].max()),
+        max(full['WDR'].max(), full['LDR'].max()),
+        max(full['WAst'].max(), full['LAst'].max()),
+        max(full['WTO'].max(), full['LTO'].max()),
+        max(full['WStl'].max(), full['LStl'].max()),
+        max(full['WBlk'].max(), full['LBlk'].max()),
+        max(full['WPF'].max(), full['LPF'].max())
+    ]
+    print(f'Min: {min_stats}')
+    print(f'Max: {max_stats}')
+    scaler = MinMaxScaler()
+    scaler.fit([min_stats, max_stats])
+    return scaler
+
+
 def load_historical_data(num_of_games, season_year, onehot_season, onehot_daynum, onehot_teams):
-    regular = pd.read_csv(os.path.join(data_dir, 'RegularSeasonDetailedResults.csv'))
-    tourney = pd.read_csv(os.path.join(data_dir, 'NCAATourneyDetailedResults.csv'))
+    regular = pd.read_csv(os.path.join(data_dir, 'MRegularSeasonDetailedResults.csv'))
+    regular2 = pd.read_csv(os.path.join(data_dir2, 'MRegularSeasonDetailedResults.csv'))
+    tourney = pd.read_csv(os.path.join(data_dir2, 'MNCAATourneyDetailedResults.csv'))
+    full = pd.concat([regular, regular2, tourney])
+    full = full.drop_duplicates()
 
-    print(tourney.columns)
-    # tourney_b = tourney[(tourney.Season < 2014)]
-    # data = tourney[(tourney.Season >= 2014)]
-
-    full = pd.concat([regular, tourney])
-    # train = pd.concat([regular, tourney_b])
+    scaler = get_scaler()
 
     train = full[(full.Season == season_year)]
     if len(train) == 0:
         return
 
-    print(train.shape)
-
-    print('    Full: %s' % str(full.shape))
-    print('Training: %s' % str(train.shape))
+    print(f'\t    Full: {str(full.shape)}')
+    print(f'\tTraining: {str(train.shape)}')
 
     if multithread:
-        df_split = np.array_split(train, 100)
-        args = []
+        threads = 4
+        df_split = np.array_split(train, threads)
+        args_ = []
+        thread_count = 0
         for x in df_split:
-            args.append([num_of_games, x, full, onehot_season, onehot_daynum, onehot_teams])
+            args_.append([thread_count, num_of_games, x, train, onehot_season, onehot_daynum, onehot_teams, scaler])
+            thread_count += 1
 
-        with Pool(processes=8) as pool:
-            df = pool.starmap(parse_stats_data, args)
-
+        print(f'\t-- Starting Pooling --')
+        with Pool(processes=threads) as pool:
+            df = pool.starmap(parse_stats_data, args_)
+        print(f'\t-- Complete Pooling --')
         x_train = []
         y_train = []
+        print(f'\t-- Starting Concatenation --')
         for f in df:
             if len(x_train) == 0:
                 x_train = f[0]
@@ -55,8 +103,15 @@ def load_historical_data(num_of_games, season_year, onehot_season, onehot_daynum
                 if len(f[0]) > 0 and len(f[1]) > 0:
                     x_train = np.concatenate((x_train, f[0]), axis=0)
                     y_train = np.concatenate((y_train, f[1]), axis=0)
+        print(f'\t-- Complete Concatenation --')
     else:
-        x_train, y_train = parse_stats_data(num_of_games, train, full, onehot_season, onehot_daynum, onehot_teams)
+        x_train, y_train = parse_stats_data(0, num_of_games,
+                                            train,
+                                            train,  # really only matters when multiprocessing
+                                            onehot_season,
+                                            onehot_daynum,
+                                            onehot_teams,
+                                            scaler)
 
     print(x_train.shape)
     print(y_train.shape)
@@ -64,25 +119,28 @@ def load_historical_data(num_of_games, season_year, onehot_season, onehot_daynum
     df_x = pd.DataFrame(x_train)
     df_y = pd.DataFrame(y_train)
 
-    print(df_x.shape)
-    print(df_y.shape)
-
-    path = './training_data/%i/' % num_of_games
+    if not os.path.exists(training_dir):
+        os.mkdir(training_dir)
+    path = os.path.join(training_dir, f'{num_of_games}')
     if not os.path.exists(path):
         os.mkdir(path)
 
     # x_train, y_train = parse_stats_data(train, full, onehot_season, onehot_daynum, onehot_teams)
-    df_x.to_csv(('%s/x_train-%i.csv' % (path, season_year)), index=False)
-    df_y.to_csv(('%s/y_train-%i.csv' % (path, season_year)), index=False)
+    df_x.to_csv(f'{path}/x_train-{season_year}.csv', index=False)
+    df_y.to_csv(f'{path}/y_train-{season_year}.csv', index=False)
 
 
-def parse_stats_data(num_of_games, df, full, onehot_season, onehot_daynum, onehot_teams):
+def parse_stats_data(thread_count, num_of_games, df, full, onehot_season, onehot_daynum, onehot_teams, stats_scaler):
     # print('parse_data')
 
     x = []
     y = []
-
+    start_time = time.time()
     for index, row in df.iterrows():
+        if index % 100 == 0:
+            gig = time.time() - start_time
+            print(f'\tThread: {thread_count} Row: {index} Time: {gig} secs')
+            start_time = time.time()
         # print(onehot_encoder.transform(np.array(row.WTeamID).reshape(-1, 1)))
         # print(onehot_encoder.transform(np.array(row.LTeamID).reshape(-1, 1)))
 
@@ -105,16 +163,6 @@ def parse_stats_data(num_of_games, df, full, onehot_season, onehot_daynum, oneho
 
         # print(len(w_hist))
         for i in range(num_of_games):
-            # print('- Winner History (%s) -' % str(row.WTeamID))
-            # print(' DayNum: ', w_hist.iloc()[i].DayNum)
-            # print('WTeamID: ', w_hist.iloc()[i].WTeamID)
-            # print('LTeamID: ', w_hist.iloc()[i].LTeamID)
-
-            # print('- Loser History (%s) -' % str(row.LTeamID))
-            # print(' DayNum: ', l_hist.iloc()[i].DayNum)
-            # print('WTeamID: ', l_hist.iloc()[i].WTeamID)
-            # print('LTeamID: ', l_hist.iloc()[i].LTeamID)
-
             team1stats = []
             team2stats = []
             team3stats = []
@@ -379,11 +427,16 @@ def parse_stats_data(num_of_games, df, full, onehot_season, onehot_daynum, oneho
                     team4stats.append(w_hist.iloc()[i].WBlk)
                     team4stats.append(w_hist.iloc()[i].WPF)
 
+            team1stats = stats_scaler.transform([team1stats]).reshape(13, )
+            team2stats = stats_scaler.transform([team2stats]).reshape(13, )
+            team3stats = stats_scaler.transform([team3stats]).reshape(13, )
+            team4stats = stats_scaler.transform([team4stats]).reshape(13, )
+
             x_1 = np.concatenate((
                 season1vec, daynum1vec,
                 team1vec, np.array(team1stats),
                 team3vec, np.array(team3stats),
-                season2vec, daynum2vec,
+                daynum2vec,
                 team2vec, np.array(team2stats),
                 team4vec, np.array(team4stats)
             ), axis=None)
@@ -416,25 +469,18 @@ def parse_stats_data(num_of_games, df, full, onehot_season, onehot_daynum, oneho
         else:
             y = np.concatenate((y, y_1), axis=0)
 
-    if len(x) == 0 or len(y) == 0:
-        return x, y
-
-    # print(x.shape)
-    # print(y.shape)
-
     return x, y
 
 
 def predict_stage(num_of_games):
-    model_name = './models/ncaa_model.h5'
-    model_file = Path(model_name)
-    if model_file.exists():
+    model_name = os.path.join(model_dir, 'ncaa_model.h5')
+    if os.path.exists(model_name):
         model = load_model(model_name)
     else:
         return
 
     season = [2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013,
-              2014, 2015, 2016, 2017, 2018, 2019]
+              2014, 2015, 2016, 2017, 2018, 2019, 2020]
     season_df = pd.DataFrame(season, columns=['Season'])
     onehot_season = OneHotEncoder(sparse=False, categories='auto')
     onehot_season.fit(season_df.Season.values.reshape(-1, 1))
@@ -447,20 +493,23 @@ def predict_stage(num_of_games):
     onehot_daynum = OneHotEncoder(sparse=False, categories='auto')
     onehot_daynum.fit(daynum_df.DayNum.values.reshape(-1, 1))
 
-    teams_df = pd.read_csv(os.path.join(data_dir, 'Teams.csv'))
+    teams_df = pd.read_csv(os.path.join(data_dir, 'MTeams.csv'))
     onehot_teams = OneHotEncoder(sparse=False, categories='auto')
     onehot_teams.fit(teams_df.TeamID.values.reshape(-1, 1))
 
-    regular = pd.read_csv(os.path.join(data_dir, 'RegularSeasonDetailedResults.csv'))
-    tourney = pd.read_csv(os.path.join(data_dir, 'NCAATourneyDetailedResults.csv'))
-    full = pd.concat([regular, tourney])
+    regular = pd.read_csv(os.path.join(data_dir, 'MRegularSeasonDetailedResults.csv'))
+    regular2 = pd.read_csv(os.path.join(data_dir2, 'MRegularSeasonDetailedResults.csv'))
+    tourney = pd.read_csv(os.path.join(data_dir2, 'MNCAATourneyDetailedResults.csv'))
+    full = pd.concat([regular, regular2, tourney])
+    full = full.drop_duplicates()
 
-    seeds = pd.read_csv(os.path.join(data_dir, 'NCAATourneySeeds.csv'))
+    seeds = pd.read_csv(os.path.join(data_dir2, 'MNCAATourneySeeds.csv'))
+    scaler = get_scaler()
 
     preds = []
     preds2 = []
 
-    for season in range(2019, 2020):
+    for season in range(2020, 2021):
         seeds_p = seeds[(seeds.Season == season)].sort_values(by=['TeamID'])
 
         teams = seeds_p.TeamID.unique()
@@ -481,18 +530,17 @@ def predict_stage(num_of_games):
                              0, 0]])
             df = pd.DataFrame(arr, columns=tourney.columns)
 
-            x, y = parse_stats_data(num_of_games, df, full, onehot_season, onehot_daynum, onehot_teams)
-            x = x.reshape(1, num_of_games, 1860)
+            x, y = parse_stats_data(0, num_of_games, df, full, onehot_season, onehot_daynum, onehot_teams, scaler)
+            x = x.reshape((1, num_of_games, 1848))
 
             prediction = model.predict(x)
 
-            print('%i - %s-%i (%.2f) vs. %s-%i (%.2f)' %
-                  (season, team1.TeamName.values[0], team1.TeamID.values[0], prediction[0][0],
-                   team2.TeamName.values[0], team2.TeamID.values[0], prediction[0][1]))
+            print(f'{season} - {team1.TeamName.values[0]}-{team1.TeamID.values[0]} ({prediction[0][0]:.2f}) vs. '
+                  f'{team2.TeamName.values[0]}-{team2.TeamID.values[0]} ({prediction[0][1]:.2f})')
 
             # 2012_1112_1181,0.47
-            s = '%i_%i_%i' % (season, team1.TeamID.values[0], team2.TeamID.values[0])
-            s2 = '%i_%s_%s' % (season, team1.TeamName.values[0], team2.TeamName.values[0])
+            s = f'{season}_{team1.TeamID.values[0]}_{team2.TeamID.values[0]}'
+            s2 = f'{season}_{team1.TeamName.values[0]}_{team2.TeamName.values[0]}'
 
             frame = pd.DataFrame(np.array([[s, round(prediction[0][0], 2)]]), columns=['ID', 'Pred'])
             frame2 = pd.DataFrame(np.array([[s2, round(prediction[0][0], 2), round(prediction[0][1], 2)]]),
@@ -507,24 +555,25 @@ def predict_stage(num_of_games):
 
             print('--------------')
 
-        print(preds.shape)
-
     if not os.path.exists('./submission_files'):
         os.mkdir('./submission_files')
 
-    print(preds.shape)
+    print(f'Saving Submission: {preds.shape}')
     preds.to_csv('./submission_files/submission_stage.csv', index=False)
 
-    print(preds2.shape)
+    print(f'Saving Full Submission: {preds2.shape}')
     preds2.to_csv('./submission_files/submission_stage_full.csv', index=False)
 
 
-def train_model(num_of_games):
-    model_name = './models/ncaa_model.h5'
-    model_file = Path(model_name)
-    if model_file.exists():
+def train_model(epochs, num_of_games, start_season, end_season):
+    if not os.path.exists(model_dir):
+        os.mkdir(model_dir)
+    model_name = os.path.join(model_dir, 'ncaa_model.h5')
+    if os.path.exists(model_name):
+        print(f'Loading Model')
         model = load_model(model_name)
     else:
+        print(f'Creating new Model')
         model = Sequential()
         # model.add(LSTM(32, input_shape=(3, 1860), activation='sigmoid', return_sequences=True))
         # model.add(LSTM(128, activation='sigmoid', return_sequences=True))
@@ -532,7 +581,7 @@ def train_model(num_of_games):
         # model.add(Dense(2, activation='softmax'))
         # model.compile(loss='categorical_crossentropy', optimizer='adagrad', metrics=['accuracy'])
         #
-        model.add(LSTM(64, input_shape=(num_of_games, 1860), activation='softmax', return_sequences=True))
+        model.add(LSTM(64, input_shape=(num_of_games, 1848), activation='softmax', return_sequences=True))
         model.add(LSTM(32, activation='tanh', return_sequences=True))
         model.add(LSTM(128, activation='elu', return_sequences=False))
         model.add(Dense(2, activation='softmax'))
@@ -544,9 +593,14 @@ def train_model(num_of_games):
     x = []
     y = []
     index = 0
-    for season in range(2003, 2020):
-        a = pd.read_csv('./training_data/%i/x_train-%i.csv' % (num_of_games, season))
-        b = pd.read_csv('./training_data/%i/y_train-%i.csv' % (num_of_games, season))
+    for season in range(start_season, end_season + 1):
+        file_x = os.path.join(training_dir, f'{num_of_games}/x_train-{season}.csv')
+        file_y = os.path.join(training_dir, f'{num_of_games}/y_train-{season}.csv')
+        if not os.path.exists(file_x) or \
+                not os.path.exists(file_y):
+            continue
+        a = pd.read_csv(file_x)
+        b = pd.read_csv(file_y)
         if len(a) == 0 or len(b) == 0:
             continue
         if index == 0:
@@ -554,23 +608,23 @@ def train_model(num_of_games):
             x = a
             y = b
         else:
-            x = pd.concat([x, a])
-            y = pd.concat([y, b])
-        print('%i: %s' % (season, x.shape))
+            x = pd.concat([x, a], sort=True)
+            y = pd.concat([y, b], sort=True)
+        print(f'{season}: {x.shape}')
 
-    x = x.values.reshape(y.shape[0], num_of_games, 1860)
-    print('X Shape: %s' % str(x.shape))
-    print('Y Shape: %s' % str(y.shape))
+    x = x.values.reshape(y.shape[0], num_of_games, x.shape[1])
+    print(f'X Shape: {str(x.shape)}')
+    print(f'Y Shape: {str(y.shape)}')
 
     x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3)
 
     es = EarlyStopping(monitor='acc', mode='auto', verbose=1, patience=5)
     mc = ModelCheckpoint(model_name, monitor='acc', verbose=1, save_best_only=True, mode='auto', period=5)
-    model.fit(x_train, y_train, epochs=50, batch_size=20, verbose=1, callbacks=[es, mc])
+    model.fit(x_train, y_train, epochs=epochs, batch_size=20, verbose=1, callbacks=[es, mc])
 
     score = model.evaluate(x_test, y_test)
     print('=========================')
-    print('Accuracy: %.3f' % score[1])
+    print(f'Accuracy: {score[1]:.3f}')
     print('=========================')
 
     model.save(model_name)
@@ -580,7 +634,7 @@ def train_model(num_of_games):
 
 def process_historical(num_of_games):
     season = [2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013,
-              2014, 2015, 2016, 2017, 2018, 2019]
+              2014, 2015, 2016, 2017, 2018, 2019, 2020]
     season_df = pd.DataFrame(season, columns=['Season'])
     onehot_season = OneHotEncoder(sparse=False, categories='auto')
     onehot_season.fit(season_df.Season.values.reshape(-1, 1))
@@ -593,26 +647,31 @@ def process_historical(num_of_games):
     onehot_daynum = OneHotEncoder(sparse=False, categories='auto')
     onehot_daynum.fit(daynum_df.DayNum.values.reshape(-1, 1))
 
-    teams = pd.read_csv(os.path.join(data_dir, 'Teams.csv'))
+    teams = pd.read_csv(os.path.join(data_dir, 'MTeams.csv'))
     onehot_teams = OneHotEncoder(sparse=False, categories='auto')
     onehot_teams.fit(teams.TeamID.values.reshape(-1, 1))
 
-    for season in range(2003, 2020):
-        print('Processing Season %i' % season)
+    for season in range(2020, 2021):
+        print(f'Processing Season {season}')
         load_historical_data(num_of_games, season, onehot_season, onehot_daynum, onehot_teams)
 
 
-def main():
-    num_of_games = 5
-
-    process_historical(num_of_games)
-    train_model(num_of_games)
-    predict_stage(num_of_games)
-
-
-# {'nb_neurons': [32, 128, 8], 'activation': ['sigmoid', 'sigmoid', 'softmax'],
-# 'nb_layers': 3, 'optimizer': 'adagrad'}
-
-
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description='Converts Data and Predicts Mens College Basketball games.')
+    parser.add_argument('--num', default=5)
+    parser.add_argument('--history', help='Process Historical Data', action='store_true')
+    parser.add_argument('--train', help='Train Model', action='store_true')
+    parser.add_argument('--epochs', default=15, type=int)
+    parser.add_argument('--start_season', default=2003, type=int)
+    parser.add_argument('--end_season', default=2020, type=int)
+    parser.add_argument('--predict', help='Predict future games', action='store_true')
+    args = parser.parse_args()
+
+    number_of_games = args.num
+
+    if args.history is True:
+        process_historical(number_of_games)
+    if args.train is True:
+        train_model(args.epochs, number_of_games, args.start_season, args.end_season)
+    if args.predict is True:
+        predict_stage(number_of_games)
